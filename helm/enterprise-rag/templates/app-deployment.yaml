@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "enterprise-rag.fullname" . }}
+  labels:
+    {{- include "enterprise-rag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.app.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: api
+      {{- include "enterprise-rag.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: api
+        {{- include "enterprise-rag.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.app.image.repository }}:{{ .Values.app.image.tag }}"
+          imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.app.port }}
+          env:
+            - name: DB_URL
+              value: "jdbc:postgresql://{{ include "enterprise-rag.postgres.fullname" . }}:5432/{{ .Values.postgres.database }}"
+            - name: DB_USER
+              value: {{ .Values.postgres.username | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "enterprise-rag.secretName" . }}
+                  key: postgres-password
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "enterprise-rag.secretName" . }}
+                  key: openai-api-key
+            - name: RAG_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "enterprise-rag.secretName" . }}
+                  key: rag-api-key
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.app.env.otlpEndpoint | quote }}
+            - name: OPENAI_CHAT_MODEL
+              value: {{ .Values.app.env.chatModel | quote }}
+            - name: OPENAI_EMBEDDING_MODEL
+              value: {{ .Values.app.env.embeddingModel | quote }}
+            - name: MANAGEMENT_HEALTH_LIVENESSSTATE_ENABLED
+              value: "true"
+            - name: MANAGEMENT_HEALTH_READINESSSTATE_ENABLED
+              value: "true"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}

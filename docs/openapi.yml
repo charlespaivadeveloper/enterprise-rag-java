@@ -1,0 +1,390 @@
+openapi: 3.1.0
+
+info:
+  title: Enterprise RAG Platform
+  version: 0.1.1
+  description: |
+    Multi-tenant Retrieval-Augmented Generation API.
+
+    ## Tenant isolation
+    Every request requires the `X-Tenant-Id` header. All stored chunks and
+    retrieval queries are scoped to that identifier. PostgreSQL RLS provides
+    a second enforcement layer in production (see ARCHITECTURE.md).
+
+    ## Prompt-injection guardrails
+    The platform rejects queries and sanitises documents to neutralise known
+    prompt-injection patterns before text reaches the LLM.
+
+    ## Error handling (⚠ roadmap gap)
+    No global `@ControllerAdvice` exists in v0.1.1. `IllegalArgumentException`
+    and `SecurityException` thrown by the service layer currently surface as
+    HTTP 500. The status codes documented here reflect the **intended** contract;
+    a `GlobalExceptionHandler` is required to enforce them.
+
+    ## Retrieval scoring
+    Hybrid search combines semantic (cosine similarity, weight 0.70) and
+    lexical (ts_rank, weight 0.30) scores. Each citation carries the final
+    blended score for transparency.
+  contact:
+    name: Charles Paiva
+    email: paiva.charles@gmail.com
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Documents
+    description: Ingest text documents into the knowledge base
+  - name: Questions
+    description: Retrieve answers grounded in the knowledge base
+  - name: Observability
+    description: Health, info, and metrics endpoints (Spring Boot Actuator)
+
+paths:
+
+  /api/v1/documents:
+    post:
+      tags: [Documents]
+      summary: Ingest a document
+      description: |
+        Chunks the supplied text, generates embeddings, and persists all chunks
+        to the tenant's knowledge base. The document content is sanitised to
+        neutralise prompt-injection instructions before storage.
+      operationId: ingestDocument
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestRequest'
+            examples:
+              policy_doc:
+                summary: Short policy document
+                value:
+                  sourceName: "GDPR-Policy-2024.pdf"
+                  content: "All personal data must be stored within the EU…"
+      responses:
+        '201':
+          description: Document ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+              examples:
+                success:
+                  value:
+                    documentId: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                    chunks: 12
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/questions:
+    post:
+      tags: [Questions]
+      summary: Ask a question
+      description: |
+        Validates the question against prompt-injection patterns, performs a
+        hybrid semantic + lexical search, and returns an LLM-generated answer
+        backed by cited evidence chunks.
+
+        When no relevant chunks are found the platform returns a safe
+        "insufficient evidence" answer rather than hallucinating.
+      operationId: askQuestion
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskRequest'
+            examples:
+              basic:
+                summary: Simple question with default topK
+                value:
+                  question: "What is our data retention policy?"
+                  topK: 5
+      responses:
+        '200':
+          description: Answer with citations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Answer'
+              examples:
+                with_citations:
+                  value:
+                    text: "Personal data must be retained for no longer than 24 months…"
+                    citations:
+                      - source: "GDPR-Policy-2024.pdf"
+                        chunk: 3
+                        excerpt: "Personal data must be retained for no longer than 24 months after the last interaction…"
+                        score: 0.847
+                    traceId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                no_evidence:
+                  summary: No relevant evidence found
+                  value:
+                    text: "Não encontrei evidências suficientes na base autorizada."
+                    citations: []
+                    traceId: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /actuator/health:
+    get:
+      tags: [Observability]
+      summary: Health check
+      operationId: health
+      responses:
+        '200':
+          description: Application is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Application is unhealthy (database or dependency down)
+
+  /actuator/info:
+    get:
+      tags: [Observability]
+      summary: Application info
+      operationId: info
+      responses:
+        '200':
+          description: Build and version information
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /actuator/prometheus:
+    get:
+      tags: [Observability]
+      summary: Prometheus metrics
+      operationId: prometheusMetrics
+      responses:
+        '200':
+          description: Prometheus text format metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+
+  parameters:
+    TenantId:
+      name: X-Tenant-Id
+      in: header
+      required: true
+      description: |
+        Tenant identifier. All reads and writes are strictly scoped to this
+        value. Must not be blank. Maximum 80 characters (matches the column
+        constraint in `knowledge_chunk.tenant_id`).
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 80
+        example: "acme-corp"
+
+  schemas:
+
+    IngestRequest:
+      type: object
+      required: [sourceName, content]
+      properties:
+        sourceName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Human-readable document identifier (filename, URL, or label).
+          example: "GDPR-Policy-2024.pdf"
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000000
+          description: Full text of the document to be chunked and embedded.
+
+    IngestResponse:
+      type: object
+      required: [documentId, chunks]
+      properties:
+        documentId:
+          type: string
+          format: uuid
+          description: Stable identifier assigned to this document. All chunks share this ID.
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        chunks:
+          type: integer
+          minimum: 1
+          description: Number of chunks stored in the knowledge base.
+          example: 12
+
+    AskRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: Natural-language question in any language.
+          example: "What is our data retention policy?"
+        topK:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+          description: |
+            Maximum number of evidence chunks to retrieve. Defaults to 5 when
+            omitted or set to 0. Higher values increase context richness at
+            the cost of latency and token usage.
+          example: 5
+
+    Answer:
+      type: object
+      required: [text, citations, traceId]
+      properties:
+        text:
+          type: string
+          description: |
+            LLM-generated answer grounded in the retrieved citations. If no
+            relevant evidence exists, returns a safe fallback message instead
+            of hallucinating.
+          example: "Personal data must be retained for no longer than 24 months…"
+        citations:
+          type: array
+          description: Evidence chunks that informed the answer, ordered by relevance score descending.
+          items:
+            $ref: '#/components/schemas/Citation'
+        traceId:
+          type: string
+          format: uuid
+          description: Unique identifier for this request, useful for log correlation.
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+    Citation:
+      type: object
+      required: [source, chunk, excerpt, score]
+      properties:
+        source:
+          type: string
+          description: The `sourceName` of the originating document.
+          example: "GDPR-Policy-2024.pdf"
+        chunk:
+          type: integer
+          minimum: 0
+          description: Zero-based ordinal position of the chunk within its document.
+          example: 3
+        excerpt:
+          type: string
+          maxLength: 220
+          description: First 220 characters of the chunk content for quick preview.
+          example: "Personal data must be retained for no longer than 24 months after the last interaction…"
+        score:
+          type: number
+          format: double
+          minimum: 0.0
+          maximum: 1.0
+          description: |
+            Final hybrid relevance score: `0.70 × cosine_similarity + 0.30 × capped_ts_rank`.
+          example: 0.847
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [UP, DOWN, OUT_OF_SERVICE, UNKNOWN]
+          example: "UP"
+        components:
+          type: object
+          additionalProperties:
+            type: object
+
+    ErrorResponse:
+      type: object
+      required: [timestamp, status, error, path]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-10-21T14:32:00Z"
+        status:
+          type: integer
+          example: 400
+        error:
+          type: string
+          example: "Bad Request"
+        message:
+          type: string
+          example: "sourceName: must not be blank"
+        path:
+          type: string
+          example: "/api/v1/documents"
+
+  responses:
+
+    BadRequest:
+      description: |
+        Request failed Bean Validation. The `message` field lists the first
+        constraint violation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            blank_source:
+              value:
+                timestamp: "2026-10-21T14:32:00Z"
+                status: 400
+                error: "Bad Request"
+                message: "sourceName: must not be blank"
+                path: "/api/v1/documents"
+            injection_detected:
+              summary: Prompt injection blocked at question validation
+              value:
+                timestamp: "2026-10-21T14:32:01Z"
+                status: 400
+                error: "Bad Request"
+                message: "question too long"
+                path: "/api/v1/questions"
+
+    Forbidden:
+      description: |
+        Suspected prompt-injection pattern detected in the question.
+        The `SecurityException` is thrown by `PromptInjectionGuard` and
+        mapped to 403 to distinguish it from ordinary validation errors.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            injection:
+              value:
+                timestamp: "2026-10-21T14:32:02Z"
+                status: 403
+                error: "Forbidden"
+                message: "suspected prompt injection"
+                path: "/api/v1/questions"
+
+    InternalError:
+      description: Unexpected server-side failure (LLM provider down, database error, etc.).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

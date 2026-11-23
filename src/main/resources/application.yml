@@ -1,0 +1,48 @@
+rag:
+  security:
+    api-key: ${RAG_API_KEY:}
+  reranking:
+    enabled: ${RAG_RERANKING_ENABLED:false}
+  eval:
+    enabled: ${RAG_EVAL_ENABLED:false}
+    ndcg-threshold: 0.70
+    mrr-threshold: 0.60
+  pii:
+    redaction:
+      enabled: ${RAG_PII_ENABLED:false}
+  storage:
+    enabled: ${RAG_STORAGE_ENABLED:false}
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${MINIO_SECRET_KEY:minioadmin}
+      bucket: ${MINIO_BUCKET:rag-documents}
+  search:
+    backend: ${RAG_SEARCH_BACKEND:pgvector}
+  model:
+    chat:
+      model: ${RAG_CHAT_MODEL:gpt-4.1-mini}
+    embedding:
+      model: ${RAG_EMBEDDING_MODEL:text-embedding-3-small}
+
+spring:
+  application.name: enterprise-rag-java
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/rag}
+    username: ${DB_USER:rag}
+    password: ${DB_PASSWORD:rag}
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:unset}
+      chat.options.model: ${OPENAI_CHAT_MODEL:gpt-4.1-mini}
+      embedding.options.model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+    vectorstore.pgvector.initialize-schema: false
+spring.mvc.problemdetails.enabled: true
+management:
+  endpoints.web.exposure.include: health,info,prometheus
+  tracing.sampling.probability: 1.0
+  otlp.tracing.endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+server.shutdown: graceful
+springdoc:
+  api-docs.path: /v3/api-docs
+  swagger-ui.path: /swagger-ui.html

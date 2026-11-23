@@ -1,0 +1,41 @@
+app:
+  image:
+    repository: enterprise-rag
+    tag: "0.1.1"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 8080
+  service:
+    type: NodePort
+    nodePort: 30080
+  env:
+    openaiApiKey: ""
+    ragApiKey: ""
+    otlpEndpoint: "http://jaeger:4318/v1/traces"
+    chatModel: "gpt-4.1-mini"
+    embeddingModel: "text-embedding-3-small"
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+postgres:
+  image:
+    repository: pgvector/pgvector
+    tag: "pg16"
+    pullPolicy: IfNotPresent
+  database: rag
+  username: rag
+  password: "rag"
+  storage: "2Gi"
+  storageClass: "standard"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "250m"

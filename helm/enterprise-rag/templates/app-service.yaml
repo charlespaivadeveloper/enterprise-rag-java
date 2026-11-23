@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "enterprise-rag.fullname" . }}
+  labels:
+    {{- include "enterprise-rag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  type: {{ .Values.app.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.app.port }}
+      targetPort: http
+      {{- if eq .Values.app.service.type "NodePort" }}
+      nodePort: {{ .Values.app.service.nodePort }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/component: api
+    {{- include "enterprise-rag.selectorLabels" . | nindent 4 }}

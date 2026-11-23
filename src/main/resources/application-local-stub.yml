@@ -1,0 +1,14 @@
+spring:
+  ai:
+    openai:
+      api-key: stub
+rag:
+  eval:
+    enabled: true
+  pii:
+    redaction:
+      enabled: true
+  storage:
+    enabled: false
+  search:
+    backend: pgvector

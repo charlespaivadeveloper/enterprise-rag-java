@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+  <Match>
+    <Class name="~.*EnterpriseRagApplication" />
+    <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2" />
+  </Match>
+  <!--
+    Interactors and Gateways store Spring-managed service interface instances
+    via constructor injection. These are singletons; storing a reference is
+    intentional DI and not a mutable-exposure risk.
+  -->
+  <Match>
+    <Class name="~.*Interactor" />
+    <Bug pattern="EI_EXPOSE_REP2" />
+  </Match>
+  <Match>
+    <Class name="~.*Gateway" />
+    <Bug pattern="EI_EXPOSE_REP2" />
+  </Match>
+  <Match>
+    <Class name="~.*Adapter" />
+    <Bug pattern="EI_EXPOSE_REP2" />
+  </Match>
+  <Match>
+    <Class name="~.*Dispatcher" />
+    <Bug pattern="EI_EXPOSE_REP2" />
+  </Match>
+  <Match>
+    <Class name="~.*Filter" />
+    <Bug pattern="EI_EXPOSE_REP2" />
+  </Match>
+</FindBugsFilter>

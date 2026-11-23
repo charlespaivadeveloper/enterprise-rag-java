@@ -1,0 +1,9 @@
+target/
+.idea/*
+!.idea/codeStyles/
+!.idea/codeStyles/*.xml
+!.idea/inspectionProfiles/
+!.idea/inspectionProfiles/*.xml
+*.iml
+.env
+*.log

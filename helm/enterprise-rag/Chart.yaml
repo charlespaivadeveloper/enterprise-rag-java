@@ -1,0 +1,11 @@
+apiVersion: v2
+name: enterprise-rag
+description: Multi-tenant Retrieval-Augmented Generation platform (Spring Boot + pgvector)
+type: application
+version: 0.1.1
+appVersion: "0.1.1"
+keywords:
+  - rag
+  - ai
+  - postgresql
+  - pgvector
