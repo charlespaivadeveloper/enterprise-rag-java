@@ -36,7 +36,7 @@ jobs:
       - name: Run unit + architecture tests
         run: >
           mvn --batch-mode test
-          -Dtest="ArchitectureTest,DocumentChunkerTest,PromptInjectionGuardTest,ApiKeyFilterTest"
+          -Dtest="ArchitectureTest,DocumentChunkerTest,PromptInjectionGuardTest,ApiKeyFilterTest,RegexPiiRedactorTest"
           -Dsurefire.failIfNoSpecifiedTests=false
 
   integration-test:
@@ -51,6 +51,11 @@ jobs:
           java-version: 21
           cache: maven
       - name: Run Testcontainers + Cucumber tests
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE: /var/run/docker.sock
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+          DOCKER_API_VERSION: "1.44"
         run: >
           mvn --batch-mode test
           -Dtest="IngestDocumentInteractorTest,AskQuestionInteractorTest,CrossTenantIsolationTest"
